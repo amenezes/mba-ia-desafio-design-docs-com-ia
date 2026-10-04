@@ -10,7 +10,7 @@ A regra de ouro é que **nenhuma informação pode ser inventada**: cada requisi
 
 | Ferramenta | Papel |
 | --- | --- |
-| **Pi (coding agent)** — provider `qwen-token-plan-individual`, modelo `qwen3.8-max` | Ferramenta principal de produção: leitura integral da transcrição e do código, extração de decisões/requisitos/descartes com timestamp, redação de PRD, RFC, FDD, ADRs e Tracker, e verificação de conformidade contra os critérios de aceite |
+| **Pi (coding agent)** | Ferramenta principal de produção: leitura integral da transcrição e do código, extração de decisões/requisitos/descartes com timestamp, redação de PRD, RFC, FDD, ADRs e Tracker, e verificação de conformidade contra os critérios de aceite |
 | **Bash/grep/find (via agente)** | Verificação mecânica de evidências: contagem de linhas do Tracker, validação de formato `[hh:mm] Nome`, confirmação de existência de todo caminho de código citado nos documentos |
 
 ## Workflow adotado
