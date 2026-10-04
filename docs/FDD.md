@@ -61,7 +61,7 @@ model WebhookOutboxEvent {
   eventType     String    @db.VarChar(100)      // "order.status_changed" ([09:43] Diego)
   payload       Json                            // snapshot renderizado na inserção ([09:52] Larissa)
   status        OutboxStatus @default(PENDING)  // pendente/processando/falhou/entregue ([09:08] Diego)
-  attempts      Int       @default(0)           // máx. 5 ([09:15] Diego)
+  attempts      Int       @default(0)           // falhas acumuladas; 6ª falha (= 5ª retentativa) ⇒ DLQ (§5.3)
   nextAttemptAt DateTime  @default(now())       // agenda o backoff ([09:17] Diego)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -159,7 +159,7 @@ Payload renderizado (campos definidos em [09:43] Diego; **sem `items`** — clie
 Loop em `src/worker.ts` → `webhook.processor.ts` ([09:28] Bruno), a cada **2 segundos** ([09:09] Diego):
 
 1. `SELECT` em batch pequeno dos eventos `PENDING` com `nextAttemptAt <= now()`, ordenados por `createdAt ASC` (single worker ⇒ ordering por `order_id` — [09:12] Diego).
-2. Marca `PROCESSING` (evita reprocessamento em caso de reinício).
+2. Marca `PROCESSING` (estado citado em [09:08] Diego; evita que o mesmo evento seja pego de novo no ciclo seguinte enquanto a entrega está em andamento).
 3. Para cada evento: carrega o `WebhookEndpoint`; serializa o payload; valida tamanho ≤ **64KB** (estouro ⇒ falha `WEBHOOK_PAYLOAD_TOO_LARGE`, sem truncar — [09:23]–[09:24]); calcula `X-Signature = HMAC-SHA256(secret, corpo)` ([09:20] Sofia).
 4. `POST` na URL do endpoint com timeout de **10s** ([09:42] Diego) e headers:
    - `Content-Type: application/json`
@@ -173,13 +173,26 @@ Loop em `src/worker.ts` → `webhook.processor.ts` ([09:28] Bruno), a cada **2 s
 
 Falha na entrega ([09:15]–[09:17] Diego):
 
-1. `attempts += 1`.
-2. Se `attempts < 5`: agenda `nextAttemptAt = now() + backoff[attempts]`, com progressão fixa **1min → 5min → 30min → 2h → 12h** ([09:17] Diego); `status = PENDING` novamente.
-3. Se `attempts >= 5`: falha permanente ⇒ fluxo 5.4.
+**Interpretação das "5 tentativas"**: a reunião fixa 5 tentativas **e** 5 intervalos (1m/5m/30m/2h/12h), com "quase 15 horas entre primeira falha e última tentativa" ([09:17] Diego). Isso só fecha se as 5 tentativas forem **retentativas** após o envio original: 1 envio + 5 retentativas = 6 chamadas HTTP, e 1+5+30+120+720 min ≈ 14,6h entre a 1ª falha e a última tentativa. Com apenas 5 envios no total, o intervalo de 12h nunca seria usado e a janela cairia para ~2,6h.
+
+`BACKOFF = [1min, 5min, 30min, 2h, 12h]` (fixo — [09:17] Diego)
+
+1. `attempts += 1` (falhas acumuladas do evento).
+2. Se `attempts <= 5`: agenda `nextAttemptAt = now() + BACKOFF[attempts - 1]`; `status = PENDING` novamente.
+3. Se `attempts > 5` (falhou também a 5ª retentativa): falha permanente ⇒ fluxo 5.4.
+
+| Falha nº | Próxima ação | Tempo acumulado desde a 1ª falha |
+| --- | --- | --- |
+| 1 (envio original) | retentativa 1 em +1min | 1min |
+| 2 | retentativa 2 em +5min | 6min |
+| 3 | retentativa 3 em +30min | 36min |
+| 4 | retentativa 4 em +2h | 2h36min |
+| 5 | retentativa 5 em +12h | ~14h36min |
+| 6 | DLQ (§5.4) | — |
 
 ### 5.4 DLQ e replay
 
-1. Esgotadas as 5 tentativas: insere `WebhookDeadLetter` (payload, `reason` com o último erro, `failedAt`) e marca o evento `FAILED` na outbox ([09:15], [09:18] Diego).
+1. Esgotadas as 5 retentativas: insere `WebhookDeadLetter` (payload, `reason` com o último erro, `failedAt`) e marca o evento `FAILED` na outbox ([09:15], [09:18] Diego).
 2. **Replay manual** por ADMIN: `POST /api/v1/admin/webhooks/dead-letter/:id/replay` ([09:18], [09:35] Diego):
    - rota protegida por `authenticate` + `requireRole('ADMIN')` ([09:36] Larissa);
    - recria o evento na outbox como `PENDING` (`attempts = 0`);
@@ -192,6 +205,12 @@ Rotas montadas sob `/api/v1` (padrão de `src/app.ts`/`src/routes/index.ts`); to
 ### 6.1 `POST /api/v1/webhooks` — cadastrar webhook (RF-01/RF-02)
 
 Request:
+
+```http
+POST /api/v1/webhooks
+Authorization: Bearer <jwt>
+Content-Type: application/json
+```
 
 ```json
 {
@@ -223,6 +242,13 @@ Erros: `400 WEBHOOK_INVALID_URL`, `400 WEBHOOK_INVALID_EVENT_FILTER`, `401 UNAUT
 
 ### 6.2 `GET /api/v1/webhooks?customerId=<uuid>` — listar webhooks do customer (RF-04)
 
+Request (sem corpo; `customerId` na query — [09:32] Larissa):
+
+```http
+GET /api/v1/webhooks?customerId=4f1a...uuid&page=1&pageSize=20
+Authorization: Bearer <jwt>
+```
+
 Response `200` (paginado via `paginated()` de `src/shared/http/response.ts`):
 
 ```json
@@ -241,18 +267,61 @@ Response `200` (paginado via `paginated()` de `src/shared/http/response.ts`):
 }
 ```
 
-A `secret` **nunca** é retornada em listagens/edições (só na criação e na rotação). Erros: `401 UNAUTHORIZED`.
+A `secret` **nunca** é retornada em listagens/edições (só na criação e na rotação). Erros: `400 VALIDATION_ERROR` (`customerId` ausente/inválido), `401 UNAUTHORIZED`.
 
 ### 6.3 `PATCH /api/v1/webhooks/:id` — editar (RF-04)
 
-Request (parcial): `{ "url": "https://...", "eventStatuses": ["DELIVERED"], "active": false }`.
-Response `200`: representação atualizada (sem secret). Erros: `404 WEBHOOK_NOT_FOUND`, `400 WEBHOOK_INVALID_URL`, `400 WEBHOOK_INVALID_EVENT_FILTER`.
+Request (todos os campos opcionais; mesmas validações do §6.1):
+
+```http
+PATCH /api/v1/webhooks/c0ff...uuid
+Authorization: Bearer <jwt>
+Content-Type: application/json
+```
+
+```json
+{
+  "url": "https://api.atlascomercial.com.br/hooks/v2/pedidos",
+  "eventStatuses": ["DELIVERED"],
+  "active": false
+}
+```
+
+Response `200` (representação atualizada, **sem secret**):
+
+```json
+{
+  "id": "c0ff...uuid",
+  "customerId": "4f1a...uuid",
+  "url": "https://api.atlascomercial.com.br/hooks/v2/pedidos",
+  "eventStatuses": ["DELIVERED"],
+  "active": false,
+  "createdAt": "2026-11-01T12:00:00.000Z",
+  "updatedAt": "2026-11-05T09:30:00.000Z"
+}
+```
+
+Erros: `400 WEBHOOK_INVALID_URL`, `400 WEBHOOK_INVALID_EVENT_FILTER`, `401 UNAUTHORIZED`, `404 WEBHOOK_NOT_FOUND`.
 
 ### 6.4 `DELETE /api/v1/webhooks/:id` — remover (RF-04)
 
-Response `204` (sem corpo). Erros: `404 WEBHOOK_NOT_FOUND`.
+Request (sem corpo):
+
+```http
+DELETE /api/v1/webhooks/c0ff...uuid
+Authorization: Bearer <jwt>
+```
+
+Response `204` (sem corpo). Erros: `401 UNAUTHORIZED`, `404 WEBHOOK_NOT_FOUND`.
 
 ### 6.5 `POST /api/v1/webhooks/:id/rotate-secret` — rotação de secret (RF-11)
+
+Request (sem corpo; a nova secret é gerada pela plataforma — [09:21] Sofia, [09:31] Marcos):
+
+```http
+POST /api/v1/webhooks/c0ff...uuid/rotate-secret
+Authorization: Bearer <jwt>
+```
 
 Response `200`:
 
@@ -264,9 +333,18 @@ Response `200`:
 }
 ```
 
-Semântica: a secret antiga permanece válida por **24h** em paralelo ([09:21] Sofia); o worker assina com a nova e, na verificação pelo cliente, ambas são aceitas dentro da janela. Erros: `404 WEBHOOK_NOT_FOUND`.
+Semântica: a secret antiga permanece válida por **24h** em paralelo, para o cliente migrar os sistemas dele; depois disso, a antiga morre ([09:21] Sofia). A rotação grava `previousSecret = secret`, `previousSecretExpiresAt = now() + 24h` e a nova `secret`. Erros: `401 UNAUTHORIZED`, `404 WEBHOOK_NOT_FOUND`.
+
+**Assinatura durante a janela de 24h — ponto em aberto ([RFC Q-06](RFC.md#questões-em-aberto))**: como quem verifica o HMAC é o cliente, "a antiga fica válida" só tem efeito se a plataforma enviar uma assinatura que o cliente ainda consiga verificar com a secret antiga. A reunião decidiu o grace period, mas não o mecanismo. **Proposta** (a confirmar na revisão de segurança da Sofia — [09:46] Sofia): enquanto `previousSecretExpiresAt > now()`, o worker calcula o HMAC com as duas secrets e envia ambas em `X-Signature`, separadas por vírgula (`<hmac_nova>,<hmac_antiga>`); o cliente aceita se qualquer uma conferir. Fora da janela, `X-Signature` leva apenas a assinatura da secret atual.
 
 ### 6.6 `GET /api/v1/webhooks/:id/deliveries` — histórico de entregas (RF-09)
+
+Request (sem corpo):
+
+```http
+GET /api/v1/webhooks/c0ff...uuid/deliveries?page=1&pageSize=100
+Authorization: Bearer <jwt>
+```
 
 Response `200` (paginado; padrão "últimas 100" — [09:34] Marcos):
 
@@ -290,21 +368,28 @@ Response `200` (paginado; padrão "últimas 100" — [09:34] Marcos):
 }
 ```
 
-Erros: `404 WEBHOOK_NOT_FOUND`.
+Erros: `401 UNAUTHORIZED`, `404 WEBHOOK_NOT_FOUND`.
 
 ### 6.7 `POST /api/v1/admin/webhooks/dead-letter/:id/replay` — replay de DLQ (RF-10)
 
-Protegido por `requireRole('ADMIN')` ([09:36] Larissa). Response `202`:
+Protegido por `requireRole('ADMIN')` ([09:36] Larissa). Request (sem corpo; o autor do replay vem do JWT, `req.user.id`, e é logado para auditoria — [09:36] Sofia):
+
+```http
+POST /api/v1/admin/webhooks/dead-letter/7e21...uuid/replay
+Authorization: Bearer <jwt de usuário ADMIN>
+```
+
+Response `202`:
 
 ```json
 { "eventId": "0d6f...uuid", "outboxStatus": "PENDING", "replayedById": "a912...uuid" }
 ```
 
-Erros: `403 FORBIDDEN` (role não-ADMIN), `404 WEBHOOK_DEAD_LETTER_NOT_FOUND`, `409 WEBHOOK_DEAD_LETTER_ALREADY_REPLAYED`.
+Erros: `401 UNAUTHORIZED`, `403 FORBIDDEN` (role não-ADMIN), `404 WEBHOOK_DEAD_LETTER_NOT_FOUND`, `409 WEBHOOK_DEAD_LETTER_ALREADY_REPLAYED`.
 
 ### 6.8 Contrato outbound (plataforma → cliente)
 
-`POST <url do endpoint>` com o payload do §5.1 e headers do §5.2. Cliente deve responder `2xx` em até **10s** ([09:42] Diego) e **deduplicar por `X-Event-Id`** ([09:25] Diego, documentado no portal — [09:26] Marcos). Verificação de assinatura pelo cliente: `HMAC-SHA256(secret_atual OU secret_anterior_em_grace, corpo_exato_do_request) == X-Signature` ([09:20]–[09:21] Sofia).
+`POST <url do endpoint>` com o payload do §5.1 e headers do §5.2. Cliente deve responder `2xx` em até **10s** ([09:42] Diego) e **deduplicar por `X-Event-Id`** ([09:25] Diego, documentado no portal — [09:26] Marcos). Verificação de assinatura pelo cliente: `HMAC-SHA256(secret, corpo_exato_do_request) == X-Signature` ([09:20] Sofia); durante a janela de rotação, ver a proposta do §6.5 (ponto em aberto, RFC Q-06).
 
 ## 7. Matriz de erros previstos (prefixo `WEBHOOK_*`)
 
@@ -329,11 +414,11 @@ Os três últimos códigos (`WEBHOOK_INVALID_EVENT_FILTER`, `WEBHOOK_DEAD_LETTER
 | Mecanismo | Especificação | Origem |
 | --- | --- | --- |
 | Timeout de entrega | 10s por chamada HTTP | [09:42] Diego |
-| Retry | 5 tentativas no total | [09:15]–[09:16] Diego |
+| Retry | 5 retentativas após o envio original (6 chamadas HTTP no máximo — interpretação no §5.3) | [09:15]–[09:17] Diego |
 | Backoff | exponencial fixo: 1m, 5m, 30m, 2h, 12h (janela ~15h) | [09:17] Diego |
 | Fallback | após 5ª falha ⇒ DLQ persistida com motivo; recuperação via replay manual ADMIN | [09:15], [09:18], [09:35]–[09:36] Diego/Sofia/Larissa |
 | Atomicidade | evento e mudança de status na mesma transação; rollback conjunto | [09:06] Diego, [09:40]–[09:41] Bruno/Diego |
-| Restart do worker | eventos `PROCESSING` órfãos retornam a `PENDING` na inicialização (at-least-once — duplicatas cobertas por `X-Event-Id`) | [09:11] Diego (processo separado), [09:24]–[09:25] Diego |
+| Restart do worker | eventos `PROCESSING` órfãos retornam a `PENDING` na inicialização (at-least-once — duplicatas cobertas por `X-Event-Id`). *Derivação*: não discutido nominalmente; decorre do estado `processando` ([09:08]) + garantia at-least-once ([09:24]) | [09:08] Diego, [09:11] Diego, [09:24]–[09:25] Diego |
 | Payload anômalo | > 64KB ⇒ falha imediata sem truncamento | [09:23]–[09:24] |
 | Latência de pico | rate limiting de saída **não** implementado nesta fase; observar | [09:38]–[09:39] Diego/Larissa |
 
@@ -372,7 +457,7 @@ Padrão: **Pino** (`src/shared/logger/index.ts`), já usado em todo o projeto �
 
 ## 11. Integração com o sistema existente
 
-Seção obrigatória do desafio: como o módulo de webhooks se conecta ao código real do repositório base.
+Seção obrigatória do desafio: como o módulo de webhooks se conecta ao código real do repositório base. Todos os caminhos da tabela abaixo **existem hoje** no repositório. Os únicos caminhos citados neste pacote que ainda não existem são os **arquivos a criar** pela feature: `src/worker.ts` ([09:11] Larissa) e o módulo `src/modules/webhooks/` (`webhook.controller.ts`, `webhook.service.ts`, `webhook.repository.ts`, `webhook.routes.ts`, `webhook.schemas.ts`, `webhook.worker.ts`/`webhook.processor.ts` — [09:27]–[09:28] Bruno).
 
 | # | Caminho real | Como integra |
 | --- | --- | --- |
@@ -393,8 +478,8 @@ Seção obrigatória do desafio: como o módulo de webhooks se conecta ao códig
 - **T-01**: rollback da transação do `changeStatus` ⇒ zero linhas na `webhook_outbox`; commit ⇒ exatamente uma linha por endpoint compatível com o filtro ([09:40]–[09:41], [09:34]).
 - **T-02**: evento publicado com status fora do `eventStatuses` do endpoint ⇒ nenhuma linha inserida ([09:34] Bruno).
 - **T-03**: entrega bem-sucedida em < 10s a partir do polling (pior caso 2s + tempo de HTTP) ([09:02], [09:09]).
-- **T-04**: `X-Signature` verificável com HMAC-SHA256(secret, corpo exato); durante grace period, aceite também com `previousSecret` ([09:20]–[09:21]).
-- **T-05**: sequência de falhas respeita `nextAttemptAt` ≈ 1m/5m/30m/2h/12h; após 5ª falha há linha na `webhook_dead_letter` com `reason` ([09:17]–[09:18]).
+- **T-04**: `X-Signature` verificável com HMAC-SHA256(secret, corpo exato) ([09:20]); após uma rotação, um cliente que ainda usa a secret anterior continua conseguindo verificar as entregas por 24h, e não consegue mais depois disso ([09:21]) — mecanismo conforme a proposta do §6.5, sujeita à RFC Q-06.
+- **T-05**: sequência de falhas respeita `nextAttemptAt` ≈ 1m/5m/30m/2h/12h (5 retentativas, ~14h36min desde a 1ª falha); a falha da 5ª retentativa gera linha na `webhook_dead_letter` com `reason` e o evento fica `FAILED` na outbox ([09:17]–[09:18]).
 - **T-06**: replay por não-ADMIN ⇒ `403`; por ADMIN ⇒ evento volta `PENDING` com `attempts = 0` e log de auditoria com o autor ([09:36]).
 - **T-07**: cadastro com `http://` ⇒ `400 WEBHOOK_INVALID_URL` ([09:23]).
 - **T-08**: payload > 64KB ⇒ entrega falha com `WEBHOOK_PAYLOAD_TOO_LARGE`, sem truncamento ([09:23]–[09:24]).

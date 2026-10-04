@@ -14,7 +14,8 @@ Há precedente real: um cliente já teve indisponibilidade de **duas horas** em 
 
 1. **Backoff exponencial com 5 tentativas** ([09:15] Diego, [09:16] Diego: "Cinco já dá pra cobrir uma janela de até 12 ou 24 horas").
 2. **Progressão fixa**: 1 minuto, 5 minutos, 30 minutos, 2 horas, 12 horas — total de quase 15 horas entre a primeira falha e a última tentativa ([09:17] Diego). Aceitável do ponto de vista de produto: "Se um cliente meu cair por 15 horas, ele já tá com problema sério dele" ([09:17] Marcos).
-3. **Falha permanente → Dead Letter Queue**: esgotadas as tentativas, o evento é considerado falha permanente e movido para a DLQ ([09:15] Diego).
+   - **Interpretação**: como há 5 intervalos e ~15h "entre primeira falha e última tentativa", as 5 tentativas são **retentativas** após o envio original (até 6 chamadas HTTP por evento). Com 5 envios no total, o intervalo de 12h nunca seria usado e a janela cairia para ~2,6h. Detalhe no [FDD §5.3](../FDD.md#53-retry-com-backoff).
+3. **Falha permanente → Dead Letter Queue**: esgotadas as retentativas, o evento é considerado falha permanente e movido para a DLQ ([09:15] Diego).
 4. **DLQ em tabela separada** (`webhook_dead_letter`), contendo o payload, o motivo da falha e o timestamp — mantém a leitura da outbox principal limpa e serve de evidência para debug e reprocessamento ([09:18] Diego).
 5. **Reprocessamento manual via endpoint admin**: `POST /admin/webhooks/dead-letter/:id/replay` recoloca o evento na outbox como pendente ([09:18] Diego, [09:35] Diego). O endpoint exige role `ADMIN` do JWT e reaproveita o `requireRole` já existente ([09:36] Larissa), e **loga quem fez o replay** para auditoria ([09:36] Sofia).
 6. **Timeout de entrega de 10 segundos**: cliente que não responde em 10s é tratado como falha e marcado para retry ([09:42] Diego).

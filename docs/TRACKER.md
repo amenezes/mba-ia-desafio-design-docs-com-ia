@@ -37,7 +37,7 @@ Referência cruzada entre cada item registrado nos documentos do pacote e sua **
 | PRD-RNF-07 | docs/PRD.md | Requisito Não Funcional | Secret única por endpoint (não global); segredos não vazam em log | TRANSCRICAO | [09:21] Sofia; [09:22] Diego |
 | PRD-RNF-08 | docs/PRD.md | Requisito Não Funcional | Replay de DLQ exige role ADMIN reaproveitando requireRole existente | TRANSCRICAO | [09:36] Larissa |
 | PRD-RNF-09 | docs/PRD.md | Requisito Não Funcional | Outbox com índice em status e created_at; worker lê pendentes em batch pequeno | TRANSCRICAO | [09:08] Diego |
-| PRD-RNF-10 | docs/PRD.md | Requisito Não Funcional | Reservar ≥2 dias úteis para revisão de segurança (HMAC e geração de secret) antes do deploy | TRANSCRICAO | [09:46] Sofia |
+| PRD-RNF-10 | docs/PRD.md | Requisito Não Funcional | Prazo de entrega fim de novembro; ~3 sprints incluindo a revisão de segurança | TRANSCRICAO | [09:45] Marcos; [09:47] Larissa |
 | PRD-R-01 | docs/PRD.md | Risco | Vazamento de secret no lado do cliente (precedente real em log de aplicação) | TRANSCRICAO | [09:22] Diego |
 | PRD-R-02 | docs/PRD.md | Risco | Indisponibilidade longa do cliente; precedente de 2h em manutenção planejada; janela de retry ~15h | TRANSCRICAO | [09:16] Diego; [09:17] Marcos |
 | PRD-R-03 | docs/PRD.md | Risco | Acúmulo de eventos na tabela pode deixar o worker lento | TRANSCRICAO | [09:07] Bruno |
@@ -46,6 +46,23 @@ Referência cruzada entre cada item registrado nos documentos do pacote e sua **
 | PRD-R-06 | docs/PRD.md | Risco | Prazo (3 sprints) deve absorver a revisão de segurança de 2 dias | TRANSCRICAO | [09:46] Sofia; [09:47] Larissa |
 | PRD-DEC-01 | docs/PRD.md | Decisão | Trade-off aceito: latência mínima de 2s (polling) em vez de push reativo | TRANSCRICAO | [09:10] Larissa |
 | PRD-CA-09 | docs/PRD.md | Critério de Aceite | Duplicatas carregam o mesmo X-Event-Id para dedup | TRANSCRICAO | [09:25] Diego |
+| PRD-OBJ-03 | docs/PRD.md | Objetivo/Métrica | Confiabilidade: retry cobre indisponibilidade do cliente de até ~15h antes da DLQ | TRANSCRICAO | [09:17] Diego; [09:17] Marcos |
+| PRD-OBJ-04 | docs/PRD.md | Objetivo/Métrica | 100% das entregas assinadas com HMAC-SHA256 (X-Signature) | TRANSCRICAO | [09:20] Sofia |
+| PRD-FESC-06 | docs/PRD.md | Fora de Escopo | Webhooks inbound (cliente enviando para a plataforma) descartados | TRANSCRICAO | [09:02] Marcos; [09:03] Sofia |
+| PRD-CEN-01 | docs/PRD.md | Cenário de Uso | Cliente cadastra endpoint via API autenticada por JWT de usuário que representa o cliente | TRANSCRICAO | [09:32] Marcos |
+| PRD-CEN-02 | docs/PRD.md | Cenário de Uso | Cliente filtra para receber só SHIPPED e DELIVERED | TRANSCRICAO | [09:33] Marcos |
+| PRD-DEP-01 | docs/PRD.md | Dependência | Portal de desenvolvedor documenta dedup por X-Event-Id e integração via API | TRANSCRICAO | [09:26] Marcos; [09:40] Marcos |
+| PRD-DEP-02 | docs/PRD.md | Dependência | Revisão de segurança de ≥2 dias úteis (HMAC e geração de secret) antes do deploy | TRANSCRICAO | [09:46] Sofia |
+| PRD-DEP-03 | docs/PRD.md | Dependência | Nova entry-point src/worker.ts (a criar) + script npm run worker | TRANSCRICAO | [09:11] Larissa |
+| PRD-CA-01 | docs/PRD.md | Critério de Aceite | Evento publicado na outbox na mesma transação; rollback não publica | TRANSCRICAO | [09:40] Bruno; [09:41] Diego |
+| PRD-CA-02 | docs/PRD.md | Critério de Aceite | Entrega em < 10s com payload JSON e headers X-Event-Id/X-Signature/X-Timestamp/X-Webhook-Id | TRANSCRICAO | [09:10] Larissa; [09:44] Diego; [09:45] Diego |
+| PRD-CA-03 | docs/PRD.md | Critério de Aceite | Retry 1m/5m/30m/2h/12h (5 retentativas, ~15h); falha da 5ª retentativa ⇒ DLQ com payload, motivo e timestamp | TRANSCRICAO | [09:17] Diego; [09:18] Diego |
+| PRD-CA-04 | docs/PRD.md | Critério de Aceite | Cadastro com URL http:// recusado com erro de validação | TRANSCRICAO | [09:23] Sofia |
+| PRD-CA-05 | docs/PRD.md | Critério de Aceite | X-Signature HMAC-SHA256 verificável; secret antiga válida por 24h após rotação | TRANSCRICAO | [09:20] Sofia; [09:21] Sofia |
+| PRD-CA-06 | docs/PRD.md | Critério de Aceite | Replay de DLQ exige ADMIN, recoloca como pendente e loga o autor | TRANSCRICAO | [09:36] Sofia; [09:36] Larissa |
+| PRD-CA-07 | docs/PRD.md | Critério de Aceite | Histórico de entregas com status, payload, response e tempo de resposta | TRANSCRICAO | [09:34] Marcos |
+| PRD-CA-08 | docs/PRD.md | Critério de Aceite | Payload acima de 64KB falha, sem truncamento | TRANSCRICAO | [09:24] Larissa |
+| PRD-TEST-01 | docs/PRD.md | Estratégia de Teste | Validação de latência < 10s com polling de 2s | TRANSCRICAO | [09:09] Diego; [09:10] Marcos |
 | RFC-ALT-01 | docs/RFC.md | Alternativa Descartada | Disparo síncrono no service: transação pesada; cliente lento trava o fluxo; dilema de rollback | TRANSCRICAO | [09:04] Bruno; [09:06] Diego |
 | RFC-ALT-02 | docs/RFC.md | Alternativa Descartada | Redis Streams/fila externa: subir Redis Cluster para time pequeno é overengineering | TRANSCRICAO | [09:07] Larissa; [09:07] Diego |
 | RFC-ALT-03 | docs/RFC.md | Alternativa Descartada | Trigger de banco: MySQL não tem NOTIFY/LISTEN; trigger não notifica processo externo | TRANSCRICAO | [09:09] Diego |
@@ -57,6 +74,10 @@ Referência cruzada entre cada item registrado nos documentos do pacote e sua **
 | RFC-Q-03 | docs/RFC.md | Questão em Aberto | Escala futura do worker: particionamento por order_id ou lock pessimista | TRANSCRICAO | [09:13] Diego |
 | RFC-Q-04 | docs/RFC.md | Questão em Aberto | Arquivamento da outbox após ~30 dias ficou para depois | TRANSCRICAO | [09:08] Diego |
 | RFC-IMP-01 | docs/RFC.md | Impacto | Novo processo (worker) para deploy/monitorar; polling constante no MySQL | TRANSCRICAO | [09:11] Diego; [09:09] Diego |
+| RFC-Q-05 | docs/RFC.md | Questão em Aberto | E-mail de alerta de webhook com problema adiado até medir o impacto | TRANSCRICAO | [09:37] Larissa; [09:38] Marcos |
+| RFC-Q-06 | docs/RFC.md | Questão em Aberto | Mecanismo de assinatura outbound durante o grace period de 24h não foi definido (decidida só a janela) | TRANSCRICAO | [09:21] Sofia; [09:22] Sofia |
+| RFC-IMP-02 | docs/RFC.md | Limitação Conhecida | Sem ordering global; só por order_id enquanto single-worker; clientes nunca pediram ordering global | TRANSCRICAO | [09:13] Larissa; [09:14] Marcos |
+| RFC-PROP-01 | docs/RFC.md | Decisão | Interpretação: "5 tentativas" = 5 retentativas, pois os 5 intervalos somam ~15h entre 1ª falha e última tentativa | TRANSCRICAO | [09:17] Diego |
 | ADR-001 | docs/adrs/ADR-001-outbox-no-mysql.md | Decisão | Outbox no MySQL: evento inserido na mesma transação SQL de orders/history | TRANSCRICAO | [09:06] Diego; [09:08] Larissa |
 | ADR-001-02 | docs/adrs/ADR-001-outbox-no-mysql.md | Decisão | Payload renderizado em snapshot no momento da inserção | TRANSCRICAO | [09:52] Larissa; [09:52] Diego |
 | ADR-001-03 | docs/adrs/ADR-001-outbox-no-mysql.md | Decisão | Falha na inserção do outbox ⇒ rollback da mudança de status | TRANSCRICAO | [09:40] Bruno; [09:41] Diego |
@@ -77,6 +98,31 @@ Referência cruzada entre cada item registrado nos documentos do pacote e sua **
 | ADR-006-03 | docs/adrs/ADR-006-reuso-padroes-existentes.md | Decisão | Reuso de Pino, error middleware centralizado e AppError sem mudança | TRANSCRICAO | [09:29] Bruno; [09:30] Larissa |
 | ADR-006-04 | docs/adrs/ADR-006-reuso-padroes-existentes.md | Decisão | Worker usa instância própria de PrismaClient (client é por processo), mesmo DATABASE_URL | TRANSCRICAO | [09:30] Bruno |
 | ADR-006-05 | docs/adrs/ADR-006-reuso-padroes-existentes.md | Decisão | IDs UUID: "segue o padrão do resto do projeto. Tudo é uuid" | TRANSCRICAO | [09:51] Larissa; [09:51] Diego |
+| ADR-001-ALT-01 | docs/adrs/ADR-001-outbox-no-mysql.md | Alternativa Descartada | Disparo síncrono dentro da transação de mudança de status | TRANSCRICAO | [09:03] Larissa; [09:04] Bruno; [09:06] Diego |
+| ADR-001-ALT-02 | docs/adrs/ADR-001-outbox-no-mysql.md | Alternativa Descartada | Redis Streams/fila externa: infra nova, overengineering para time pequeno | TRANSCRICAO | [09:07] Larissa; [09:07] Diego |
+| ADR-001-ALT-03 | docs/adrs/ADR-001-outbox-no-mysql.md | Alternativa Descartada | Publicar o evento fora da transação: "perde a garantia toda" | TRANSCRICAO | [09:41] Diego |
+| ADR-001-04 | docs/adrs/ADR-001-outbox-no-mysql.md | Trade-off | Latência mínima de 2s no pior caso aceita em troca de não subir infra | TRANSCRICAO | [09:10] Larissa |
+| ADR-002-ALT-01 | docs/adrs/ADR-002-worker-separado-em-polling.md | Alternativa Descartada | Trigger de banco para reatividade (MySQL sem NOTIFY/LISTEN) | TRANSCRICAO | [09:09] Bruno; [09:09] Diego |
+| ADR-002-ALT-02 | docs/adrs/ADR-002-worker-separado-em-polling.md | Alternativa Descartada | Worker dentro do processo da API: reinício da API derruba o worker | TRANSCRICAO | [09:11] Diego |
+| ADR-002-ALT-03 | docs/adrs/ADR-002-worker-separado-em-polling.md | Alternativa Adiada | Múltiplos workers em paralelo: perde ordering; particionamento/lock no futuro | TRANSCRICAO | [09:12] Diego; [09:13] Diego |
+| ADR-002-05 | docs/adrs/ADR-002-worker-separado-em-polling.md | Decisão | Lógica do worker em src/modules/webhooks/webhook.worker.ts ou webhook.processor.ts (a criar) | TRANSCRICAO | [09:28] Bruno |
+| ADR-003-ALT-01 | docs/adrs/ADR-003-retry-backoff-e-dlq.md | Alternativa Descartada | Retry indefinido: evento fica pendurado para sempre | TRANSCRICAO | [09:15] Diego |
+| ADR-003-ALT-02 | docs/adrs/ADR-003-retry-backoff-e-dlq.md | Alternativa Descartada | 3 tentativas: pouco para indisponibilidades de 2h | TRANSCRICAO | [09:16] Bruno; [09:16] Diego |
+| ADR-003-ALT-03 | docs/adrs/ADR-003-retry-backoff-e-dlq.md | Alternativa Descartada | Flag "failed" na própria outbox em vez de tabela separada | TRANSCRICAO | [09:17] Larissa; [09:18] Diego |
+| ADR-003-ALT-04 | docs/adrs/ADR-003-retry-backoff-e-dlq.md | Alternativa Descartada | Reprocessamento automático da DLQ (plausível; decidido replay manual) | TRANSCRICAO | [09:18] Diego |
+| ADR-003-04 | docs/adrs/ADR-003-retry-backoff-e-dlq.md | Decisão | Replay exige role ADMIN e loga quem fez para auditoria | TRANSCRICAO | [09:36] Sofia; [09:36] Larissa |
+| ADR-003-05 | docs/adrs/ADR-003-retry-backoff-e-dlq.md | Decisão | Timeout de 10s tratado como falha e marcado para retry | TRANSCRICAO | [09:42] Diego |
+| ADR-004-ALT-01 | docs/adrs/ADR-004-hmac-sha256-secret-por-endpoint.md | Alternativa Descartada | Secret global da plataforma: "se vaza uma, vaza tudo" | TRANSCRICAO | [09:21] Sofia |
+| ADR-004-ALT-02 | docs/adrs/ADR-004-hmac-sha256-secret-por-endpoint.md | Alternativa Descartada | Truncar payload acima do limite em vez de errar | TRANSCRICAO | [09:23] Sofia |
+| ADR-004-ALT-03 | docs/adrs/ADR-004-hmac-sha256-secret-por-endpoint.md | Alternativa Descartada | Enviar sem assinatura confiando só em TLS (cliente não valida autoria/integridade) | TRANSCRICAO | [09:19] Sofia |
+| ADR-004-04 | docs/adrs/ADR-004-hmac-sha256-secret-por-endpoint.md | Decisão | Rotação de secret com grace period de 24h | TRANSCRICAO | [09:21] Sofia; [09:22] Sofia |
+| ADR-004-05 | docs/adrs/ADR-004-hmac-sha256-secret-por-endpoint.md | Restrição | TLS obrigatório (https) como validação no schema Zod | TRANSCRICAO | [09:23] Sofia |
+| ADR-005-ALT-01 | docs/adrs/ADR-005-at-least-once-x-event-id.md | Alternativa Descartada | Exactly-once: exige coordenação dos dois lados | TRANSCRICAO | [09:25] Diego |
+| ADR-005-ALT-02 | docs/adrs/ADR-005-at-least-once-x-event-id.md | Alternativa Descartada | Dedup no lado da plataforma; responsabilidade fica com o cliente | TRANSCRICAO | [09:25] Sofia; [09:25] Diego |
+| ADR-005-03 | docs/adrs/ADR-005-at-least-once-x-event-id.md | Decisão | event_id também compõe o payload JSON | TRANSCRICAO | [09:43] Diego |
+| ADR-006-ALT-01 | docs/adrs/ADR-006-reuso-padroes-existentes.md | Alternativa Descartada | Módulo de webhooks com estrutura própria: "fica como módulo igual aos outros" | TRANSCRICAO | [09:27] Bruno; [09:30] Larissa |
+| ADR-006-ALT-02 | docs/adrs/ADR-006-reuso-padroes-existentes.md | Alternativa Descartada | Logging/erro específico de webhook: "não vamos botar nada novo" | TRANSCRICAO | [09:29] Bruno |
+| ADR-006-ALT-03 | docs/adrs/ADR-006-reuso-padroes-existentes.md | Alternativa Descartada | Códigos de erro sem prefixo dedicado | TRANSCRICAO | [09:29] Larissa |
 | FDD-CONTRATO-01 | docs/FDD.md | Contrato | Headers de envio: X-Event-Id, X-Signature, X-Timestamp, Content-Type application/json | TRANSCRICAO | [09:44] Diego |
 | FDD-CONTRATO-02 | docs/FDD.md | Contrato | Header X-Webhook-Id com o id do endpoint webhook | TRANSCRICAO | [09:44] Sofia; [09:45] Diego |
 | FDD-CONTRATO-03 | docs/FDD.md | Contrato | Payload: event_id, event_type "order.status_changed", timestamp ISO 8601, order_id, order_number, from_status, to_status, customer_id, total_cents; sem items | TRANSCRICAO | [09:43] Diego |
@@ -87,6 +133,44 @@ Referência cruzada entre cada item registrado nos documentos do pacote e sua **
 | FDD-OBS-01 | docs/FDD.md | Observabilidade | Histórico guarda tempo de resposta por entrega (responseTimeMs) | TRANSCRICAO | [09:34] Marcos |
 | FDD-SEC-01 | docs/FDD.md | Segurança | Replay de DLQ loga o autor para auditoria | TRANSCRICAO | [09:36] Sofia |
 | FDD-RES-01 | docs/FDD.md | Resiliência | Retry cobre janela de até 12–24h de indisponibilidade do cliente | TRANSCRICAO | [09:15] Diego |
+| FDD-CONTRATO-06 | docs/FDD.md | Contrato | POST /api/v1/webhooks: url https + eventStatuses; secret gerada e devolvida só na criação (201) | TRANSCRICAO | [09:31] Marcos; [09:23] Sofia |
+| FDD-CONTRATO-07 | docs/FDD.md | Contrato | GET /api/v1/webhooks?customerId=: lista webhooks do customer (customer_id na query, não do JWT) | TRANSCRICAO | [09:32] Larissa; [09:33] Bruno |
+| FDD-CONTRATO-08 | docs/FDD.md | Contrato | PATCH /api/v1/webhooks/:id: edita url, eventStatuses, active | TRANSCRICAO | [09:33] Bruno |
+| FDD-CONTRATO-09 | docs/FDD.md | Contrato | DELETE /api/v1/webhooks/:id: remove (204) | TRANSCRICAO | [09:33] Bruno |
+| FDD-CONTRATO-10 | docs/FDD.md | Contrato | POST /api/v1/webhooks/:id/rotate-secret: nova secret; antiga válida 24h | TRANSCRICAO | [09:21] Sofia |
+| FDD-CONTRATO-11 | docs/FDD.md | Contrato | GET /api/v1/webhooks/:id/deliveries: últimas 100 entregas paginadas | TRANSCRICAO | [09:34] Marcos |
+| FDD-CONTRATO-12 | docs/FDD.md | Contrato | POST /api/v1/admin/webhooks/dead-letter/:id/replay: ADMIN, 202, evento volta a PENDING | TRANSCRICAO | [09:35] Diego; [09:36] Larissa |
+| FDD-CONTRATO-13 | docs/FDD.md | Contrato | Outbound: cliente responde 2xx em até 10s e deduplica por X-Event-Id | TRANSCRICAO | [09:42] Diego; [09:25] Diego |
+| FDD-CONTRATO-14 | docs/FDD.md | Contrato | Proposta (a validar): duas assinaturas em X-Signature durante a janela de rotação — derivação da RFC Q-06 | TRANSCRICAO | [09:21] Sofia; [09:46] Sofia |
+| FDD-ERRO-02 | docs/FDD.md | Erro | WEBHOOK_PAYLOAD_TOO_LARGE: payload > 64KB, erro sem truncar | TRANSCRICAO | [09:23] Sofia; [09:24] Larissa |
+| FDD-ERRO-03 | docs/FDD.md | Erro | WEBHOOK_DELIVERY_TIMEOUT: cliente não respondeu em 10s | TRANSCRICAO | [09:42] Diego |
+| FDD-ERRO-04 | docs/FDD.md | Erro | WEBHOOK_DELIVERY_FAILED: não-2xx/erro de rede alimenta retry e DLQ | TRANSCRICAO | [09:15] Diego |
+| FDD-ERRO-05 | docs/FDD.md | Erro | WEBHOOK_INVALID_EVENT_FILTER (derivado): eventStatuses vazio/inválido; regra do prefixo | TRANSCRICAO | [09:33] Marcos; [09:29] Larissa |
+| FDD-ERRO-06 | docs/FDD.md | Erro | WEBHOOK_DEAD_LETTER_NOT_FOUND / _ALREADY_REPLAYED (derivados do endpoint de replay) | TRANSCRICAO | [09:18] Diego; [09:29] Larissa |
+| FDD-FLUXO-02 | docs/FDD.md | Fluxo | Worker a cada 2s lê PENDING mais antigos em batch, ordenados por created_at | TRANSCRICAO | [09:09] Diego; [09:12] Diego |
+| FDD-FLUXO-03 | docs/FDD.md | Fluxo | Retry: 5 retentativas após o envio original (1m/5m/30m/2h/12h ≈ 14h36min); 6ª falha ⇒ DLQ | TRANSCRICAO | [09:17] Diego |
+| FDD-FLUXO-04 | docs/FDD.md | Fluxo | DLQ grava payload, motivo e timestamp; evento FAILED na outbox | TRANSCRICAO | [09:18] Diego |
+| FDD-FLUXO-05 | docs/FDD.md | Fluxo | Publicação: filtra endpoints do customer pelo status; sem interessados não insere | TRANSCRICAO | [09:34] Bruno |
+| FDD-DADOS-01 | docs/FDD.md | Modelo de Dados | IDs UUID @db.Char(36) nas novas tabelas | TRANSCRICAO | [09:51] Larissa |
+| FDD-DADOS-02 | docs/FDD.md | Modelo de Dados | Outbox guarda payload renderizado (snapshot na inserção) | TRANSCRICAO | [09:52] Larissa; [09:52] Bruno |
+| FDD-DADOS-03 | docs/FDD.md | Modelo de Dados | Tabela de configuração: url, secret, customer_id, ativo | TRANSCRICAO | [09:21] Bruno |
+| FDD-RES-02 | docs/FDD.md | Resiliência | Timeout de 10s por chamada HTTP | TRANSCRICAO | [09:42] Diego |
+| FDD-RES-03 | docs/FDD.md | Resiliência | Restart: PROCESSING órfãos voltam a PENDING (derivação de estado processando + at-least-once) | TRANSCRICAO | [09:08] Diego; [09:24] Diego |
+| FDD-RES-04 | docs/FDD.md | Resiliência | Rate limiting de saída não implementado nesta fase; observar | TRANSCRICAO | [09:39] Larissa |
+| FDD-OBS-02 | docs/FDD.md | Observabilidade | Pino como único logger, sem stack nova; redaction de secrets | TRANSCRICAO | [09:29] Bruno; [09:22] Diego |
+| FDD-OBS-03 | docs/FDD.md | Observabilidade | X-Event-Id como chave de correlação ponta a ponta (tracing) | TRANSCRICAO | [09:25] Diego |
+| FDD-DEP-01 | docs/FDD.md | Dependência | Deploy com 2 processos (API + worker) no mesmo banco, PrismaClient por processo | TRANSCRICAO | [09:11] Diego; [09:30] Bruno |
+| FDD-T-01 | docs/FDD.md | Critério de Aceite Técnico | Rollback do changeStatus ⇒ zero linhas na outbox | TRANSCRICAO | [09:40] Bruno |
+| FDD-T-02 | docs/FDD.md | Critério de Aceite Técnico | Status fora do filtro ⇒ nenhuma linha inserida | TRANSCRICAO | [09:34] Bruno |
+| FDD-T-03 | docs/FDD.md | Critério de Aceite Técnico | Entrega < 10s (polling 2s + HTTP) | TRANSCRICAO | [09:02] Marcos; [09:09] Diego |
+| FDD-T-04 | docs/FDD.md | Critério de Aceite Técnico | X-Signature verificável; secret anterior verificável por 24h após rotação | TRANSCRICAO | [09:20] Sofia; [09:21] Sofia |
+| FDD-T-05 | docs/FDD.md | Critério de Aceite Técnico | Backoff 1m/5m/30m/2h/12h; falha da 5ª retentativa ⇒ DLQ | TRANSCRICAO | [09:17] Diego; [09:18] Diego |
+| FDD-T-06 | docs/FDD.md | Critério de Aceite Técnico | Replay por não-ADMIN ⇒ 403; ADMIN ⇒ PENDING + log do autor | TRANSCRICAO | [09:36] Sofia |
+| FDD-T-07 | docs/FDD.md | Critério de Aceite Técnico | Cadastro http:// ⇒ 400 WEBHOOK_INVALID_URL | TRANSCRICAO | [09:23] Sofia |
+| FDD-T-08 | docs/FDD.md | Critério de Aceite Técnico | Payload > 64KB ⇒ WEBHOOK_PAYLOAD_TOO_LARGE | TRANSCRICAO | [09:24] Larissa |
+| FDD-T-09 | docs/FDD.md | Critério de Aceite Técnico | Deliveries retorna payload, status, body e tempo de resposta | TRANSCRICAO | [09:34] Marcos |
+| FDD-T-10 | docs/FDD.md | Critério de Aceite Técnico | Reinício do worker não perde eventos; duplicatas dedupáveis | TRANSCRICAO | [09:11] Diego; [09:25] Diego |
+| FDD-T-11 | docs/FDD.md | Critério de Aceite Técnico | Segredos nunca aparecem em logs | TRANSCRICAO | [09:22] Diego |
 | FDD-INT-01 | docs/FDD.md | Integração | changeStatus executa $transaction com update do order, insert no history e débito/reposição de estoque — ponto de extensão do outbox | CODIGO | src/modules/orders/order.service.ts |
 | FDD-INT-02 | docs/FDD.md | Integração | Máquina de estados canTransition e enum OrderStatus — fonte dos status do filtro e do payload | CODIGO | src/modules/orders/order.status.ts |
 | FDD-INT-03 | docs/FDD.md | Integração | Convenções de schema: id uuid @db.Char(36), @@map snake_case, @@index; models Order/OrderStatusHistory | CODIGO | prisma/schema.prisma |
@@ -104,7 +188,8 @@ Referência cruzada entre cada item registrado nos documentos do pacote e sua **
 
 ## Resumo de cobertura
 
-- **Total de linhas**: 95 — **TRANSCRICAO**: 81 (85%) · **CODIGO**: 14 (15%).
+- **Total de linhas**: 179 — **TRANSCRICAO**: 165 (92%) · **CODIGO**: 14 (8%).
+- Cobertura por documento: PRD (RFs, RNFs, objetivos, fora de escopo, riscos, dependências, critérios de aceitação), RFC (alternativas, questões em aberto, impacto), ADRs (decisões e alternativas consideradas de cada ADR) e FDD (contratos de cada endpoint, matriz de erros, fluxos, modelo de dados, resiliência, observabilidade, critérios técnicos T-01 a T-11 e integração com o código).
 - Todas as linhas TRANSCRICAO usam timestamp válido no formato `[hh:mm] Nome`.
 - Todas as linhas CODIGO referenciam caminhos reais existentes no repositório base.
-- Itens derivados sem citação nominal na reunião (ex.: códigos `WEBHOOK_INVALID_EVENT_FILTER`, `WEBHOOK_DEAD_LETTER_*`) estão explicitamente sinalizados como derivação no [`FDD.md` §7](FDD.md#7-matriz-de-erros-previstos-prefixo-webhook_) — a regra que os origina (`WEBHOOK_` pra tudo do módulo) está em [09:29] Larissa.
+- Itens derivados sem citação nominal na reunião (ex.: códigos `WEBHOOK_INVALID_EVENT_FILTER`, `WEBHOOK_DEAD_LETTER_*`) e propostas ainda não decididas (assinatura durante a rotação de secret — RFC Q-06; retorno de eventos `PROCESSING` órfãos a `PENDING`) estão explicitamente sinalizados como derivação no [`FDD.md` §7](FDD.md#7-matriz-de-erros-previstos-prefixo-webhook_) — a regra que os origina (`WEBHOOK_` pra tudo do módulo) está em [09:29] Larissa.

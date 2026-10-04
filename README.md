@@ -67,12 +67,18 @@ derivação de uma decisão rastreada.
 
 ## Iterações e ajustes
 
-Foram necessárias **3 iterações principais** (extração → redação → auditoria), com correções concretas:
+Foram necessárias **4 iterações principais** (extração → redação → auditoria → auditoria final contra os critérios de aceite), com correções concretas:
 
 1. **Contagens do Tracker estavam erradas no primeiro rascunho**: o resumo de cobertura afirmava "92 linhas (78 TRANSCRICAO)" com base em estimativa. A verificação mecânica com `grep -c` mostrou **95 linhas (81 TRANSCRICAO / 14 CODIGO)** — e revelou que o padrão de contagem incluía indevidamente o cabeçalho da tabela. O resumo foi corrigido pelos números medidos, não pelos supostos.
 2. **Vazamento de texto estranho e link quebrado**: a primeira versão do PRD continha uma palavra em outro idioma no §1 ("能力"), corrigida em revisão; no RFC, a tabela de decisões relacionadas apontava para `adrs/ATR-005-...` (typo) em vez de `ADR-005`, o que quebraria o link exigido pelos critérios de aceite. Ambos corrigidos antes do stage.
 3. **Boilerplate contraditório em `docs/adrs/README.md`**: o README original do diretório de ADRs prescrevia a nomenclatura `0001-titulo.md`, incompatível com o formato exigido pelo desafio (`ADR-NNN-titulo-em-kebab-case.md`). O arquivo foi substituído por um índice dos 6 ADRs produzidos, eliminando a contradição.
 4. **Derivações sinalizadas em vez de disfarçadas**: a matriz de erros do FDD precisava de códigos não citados nominalmente na reunião (ex.: `WEBHOOK_DEAD_LETTER_NOT_FOUND`). Em vez de apresentá-los como se tivessem sido ditos, o FDD (§7) e o Tracker marcam explicitamente que derivam da regra "prefixo `WEBHOOK_` pra tudo do módulo" ([09:29] Larissa) — mantendo a integridade da rastreabilidade.
+
+5. **Auditoria final contra os critérios de aceite** (4ª iteração), que encontrou problemas que as revisões anteriores não pegaram:
+   - **Backoff incoerente no FDD**: a lógica "5 tentativas no total" usava só 4 dos 5 intervalos (o de 12h nunca rodava) e dava ~2,6h de janela, contradizendo as "quase 15 horas" de [09:17] Diego. A conta só fecha com **5 retentativas após o envio original**; FDD §5.3 (com tabela de tempos), PRD, RFC e ADR-003 foram alinhados a essa leitura.
+   - **Rotação de secret inconsistente**: o FDD dizia que o worker assinava só com a nova secret e que "ambas eram aceitas" — mas quem verifica é o cliente, então a janela de 24h não teria efeito. Como a reunião decidiu a janela e não o mecanismo, o ponto virou a **questão em aberto Q-06** no RFC, com proposta no FDD §6.5 para a revisão de segurança.
+   - **Contratos incompletos**: só o `POST /webhooks` tinha request e response em bloco; todos os endpoints passaram a ter request (método, path, headers, query/body) e o `PATCH` ganhou response em JSON.
+   - **Cobertura do Tracker abaixo de 80%**: critérios de aceitação do PRD, alternativas dos ADRs, endpoints, códigos de erro e critérios técnicos do FDD não tinham linha. O Tracker passou de 95 para 179 linhas, com todos os pares `[hh:mm] Nome` validados por script contra a transcrição; uma linha (`PRD-RNF-10`) que descrevia outro item foi corrigida.
 
 ## Como navegar a entrega
 

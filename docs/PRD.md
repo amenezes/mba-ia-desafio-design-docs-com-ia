@@ -60,7 +60,7 @@ Objetivo primário quantitativo: **latência de entrega < 10 segundos** (requisi
 - Publicação atômica de eventos na outbox dentro da transação de `changeStatus` ([09:40] Bruno).
 - Worker em processo separado, polling de 2s ([09:09]–[09:11] Diego/Larissa).
 - Entrega HTTP com assinatura HMAC-SHA256 e headers (`X-Event-Id`, `X-Signature`, `X-Timestamp`, `X-Webhook-Id`) ([09:20] Sofia, [09:44]–[09:45] Diego/Sofia).
-- Retry com backoff exponencial (5 tentativas) e DLQ em tabela separada ([09:15]–[09:18] Diego).
+- Retry com backoff exponencial (5 retentativas, ~15h) e DLQ em tabela separada ([09:15]–[09:18] Diego).
 - Histórico de entregas (`GET /webhooks/:id/deliveries`) ([09:34] Marcos).
 - Endpoint admin de replay de DLQ (`POST /admin/webhooks/dead-letter/:id/replay`), role ADMIN, com auditoria ([09:18] Diego, [09:36] Sofia/Larissa).
 
@@ -84,7 +84,7 @@ Objetivo primário quantitativo: **latência de entrega < 10 segundos** (requisi
 | **RF-05** | O filtro de eventos é aplicado **na inserção na outbox**: se nenhum webhook do customer quer aquele status, o evento nem é inserido | [09:34] Bruno, [09:34] Diego |
 | **RF-06** | Quando o status de um pedido muda, um evento é publicado na outbox **na mesma transação** (atomicidade com `changeStatus`) | [09:40] Bruno, [09:41] Diego |
 | **RF-07** | O worker entrega o evento ao endpoint do cliente com payload JSON assinado e headers (`X-Event-Id`, `X-Signature`, `X-Timestamp`, `X-Webhook-Id`, `Content-Type`) | [09:43]–[09:45] Diego e Sofia |
-| **RF-08** | Em falha de entrega, o sistema faz **retry com backoff exponencial** (5 tentativas) e, esgotadas, move o evento para a **DLQ** | [09:15]–[09:18] Diego |
+| **RF-08** | Em falha de entrega, o sistema faz **retry com backoff exponencial** (5 retentativas após o envio original, intervalos 1m/5m/30m/2h/12h) e, esgotadas, move o evento para a **DLQ** | [09:15]–[09:18] Diego |
 | **RF-09** | O cliente consulta o **histórico de entregas** (`GET /webhooks/:id/deliveries`): últimas ~100, com sucesso/falha, payload, response e tempo de resposta | [09:34] Marcos |
 | **RF-10** | Um **ADMIN** pode **replayar** um evento da DLQ (`POST /admin/webhooks/dead-letter/:id/replay`), que volta à outbox como pendente; a ação é logada para auditoria | [09:18] Diego, [09:36] Sofia e Larissa |
 | **RF-11** | O cliente pode **rotacionar a secret**; durante a rotação, a secret antiga permanece válida por **24h** em paralelo | [09:21] Sofia |
@@ -137,9 +137,9 @@ As decisões arquiteturais fechadas estão registradas como ADRs; o resumo dos t
 
 - **CA-01**: ao mudar o status de um pedido com webhook cadastrado e filtro compatível, um evento é publicado na outbox na mesma transação; se a transação sofre rollback, nenhum evento é publicado ([09:40]–[09:41] Bruno/Diego).
 - **CA-02**: o worker entrega o evento ao endpoint em < 10s (respeitado o polling de 2s), com payload JSON e os headers `X-Event-Id`, `X-Signature`, `X-Timestamp`, `X-Webhook-Id` ([09:09]–[09:10], [09:44]–[09:45]).
-- **CA-03**: uma entrega que falha é retentada com backoff 1m/5m/30m/2h/12h; após a 5ª falha, o evento vai para a DLQ com payload, motivo e timestamp ([09:17]–[09:18] Diego).
+- **CA-03**: uma entrega que falha é retentada com backoff 1m/5m/30m/2h/12h (5 retentativas, quase 15h entre a 1ª falha e a última tentativa); se a 5ª retentativa também falhar, o evento vai para a DLQ com payload, motivo e timestamp ([09:17]–[09:18] Diego).
 - **CA-04**: cadastro com URL `http://` é recusado com erro de validação ([09:23] Sofia).
-- **CA-05**: a assinatura `X-Signature` é um HMAC-SHA256 verificável do corpo com a secret do endpoint; durante a rotação, ambas as secrets são aceitas por 24h ([09:20]–[09:22] Sofia).
+- **CA-05**: a assinatura `X-Signature` é um HMAC-SHA256 verificável do corpo com a secret do endpoint; após uma rotação, a secret antiga continua válida por 24h em paralelo e depois deixa de valer ([09:20]–[09:22] Sofia). O mecanismo de assinatura durante a janela está em aberto ([RFC Q-06](RFC.md#questões-em-aberto)).
 - **CA-06**: `POST /admin/webhooks/dead-letter/:id/replay` exige role ADMIN, recoloca o evento como pendente e loga o autor ([09:36] Sofia/Larissa).
 - **CA-07**: `GET /webhooks/:id/deliveries` retorna as últimas entregas com status, payload, response e tempo de resposta ([09:34] Marcos).
 - **CA-08**: payload acima de 64KB falha (não trunca) ([09:23]–[09:24]).

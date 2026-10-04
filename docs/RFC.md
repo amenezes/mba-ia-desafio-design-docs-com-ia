@@ -10,7 +10,7 @@
 
 ## TL;DR
 
-Propomos um sistema de **webhooks outbound** para notificar clientes B2B quando o status de um pedido muda. A arquitetura é **outbox no MySQL existente**: o evento é inserido na tabela `webhook_outbox` dentro da mesma transação do `changeStatus`; um **worker em processo separado** faz polling a cada 2s e entrega via HTTP com **HMAC-SHA256**, **retry com backoff (5 tentativas, ~15h)** e **DLQ** em tabela própria com replay manual por ADMIN. Garantia **at-least-once** com dedup por `X-Event-Id`. Nenhum componente de infra novo; reuso máximo dos padrões do projeto.
+Propomos um sistema de **webhooks outbound** para notificar clientes B2B quando o status de um pedido muda. A arquitetura é **outbox no MySQL existente**: o evento é inserido na tabela `webhook_outbox` dentro da mesma transação do `changeStatus`; um **worker em processo separado** faz polling a cada 2s e entrega via HTTP com **HMAC-SHA256**, **retry com backoff (5 retentativas, ~15h)** e **DLQ** em tabela própria com replay manual por ADMIN. Garantia **at-least-once** com dedup por `X-Event-Id`. Nenhum componente de infra novo; reuso máximo dos padrões do projeto.
 
 ## Contexto e problema
 
@@ -22,7 +22,7 @@ Quatro componentes, todos sobre a stack existente (Node.js + TypeScript + Expres
 
 1. **Publicação (outbox atômico)** — dentro da transação do `changeStatus`, uma função `publishWebhookEvent(tx, order, fromStatus, toStatus)` insere o evento (payload renderizado em snapshot, `event_id` UUID) na tabela `webhook_outbox`, aplicando o filtro de status dos webhooks do customer no momento da inserção ([09:41] Bruno/Diego, [09:34] Bruno, [09:52] Larissa). Se a inserção falhar, a transação inteira sofre rollback ([09:40] Bruno). → [ADR-001](adrs/ADR-001-outbox-no-mysql.md)
 2. **Worker de entrega** — novo processo (`src/worker.ts`, script `npm run worker`), com PrismaClient próprio, que a cada 2s lê pendentes em batch pequeno (índices em status/`created_at`) e dispara o HTTP com timeout de 10s, assinando com HMAC-SHA256 (`X-Signature`) e enviando `X-Event-Id`, `X-Timestamp`, `X-Webhook-Id` ([09:09]–[09:11] Diego/Larissa, [09:42]–[09:45]). Single worker nesta fase; ordering por `order_id` implícita. → [ADR-002](adrs/ADR-002-worker-separado-em-polling.md), [ADR-004](adrs/ADR-004-hmac-sha256-secret-por-endpoint.md)
-3. **Retry e DLQ** — falhou: backoff exponencial 1m/5m/30m/2h/12h (5 tentativas, janela ~15h); esgotou: move para `webhook_dead_letter` (payload, motivo, timestamp). Replay manual via `POST /admin/webhooks/dead-letter/:id/replay` com `requireRole('ADMIN')` e log de auditoria ([09:15]–[09:18], [09:35]–[09:36]). → [ADR-003](adrs/ADR-003-retry-backoff-e-dlq.md)
+3. **Retry e DLQ** — falhou: backoff exponencial 1m/5m/30m/2h/12h (5 retentativas após o envio original, janela ~15h — os 5 intervalos só somam ~15h se as "5 tentativas" forem retentativas); esgotou: move para `webhook_dead_letter` (payload, motivo, timestamp). Replay manual via `POST /admin/webhooks/dead-letter/:id/replay` com `requireRole('ADMIN')` e log de auditoria ([09:15]–[09:18], [09:35]–[09:36]). → [ADR-003](adrs/ADR-003-retry-backoff-e-dlq.md)
 4. **API de configuração** — CRUD de webhooks (módulo `src/modules/webhooks/` no padrão existente): cadastro com URL `https` obrigatória e secret gerada pela plataforma (única por endpoint, rotação com grace period de 24h), filtro por status, histórico de entregas `GET /webhooks/:id/deliveries` ([09:21]–[09:23], [09:31]–[09:34]). → [ADR-006](adrs/ADR-006-reuso-padroes-existentes.md)
 
 O detalhamento de implementação (contratos, payloads, matriz de erros, fluxos, observabilidade) está no [`FDD.md`](FDD.md).
@@ -45,6 +45,7 @@ O detalhamento de implementação (contratos, payloads, matriz de erros, fluxos,
 3. **Escala do worker (múltiplos processos)**: como particionar por `order_id` ou usar lock pessimista sem perder ordering — "problema do futuro, não agora" ([09:12]–[09:13] Diego).
 4. **Arquivamento da outbox**: linhas entregues seriam arquivadas após ~30 dias, "fora do escopo dessa feature" — quando e como fazer permanece aberto ([09:08] Diego).
 5. **Notificação por e-mail de webhook com problema** (ex.: 3 falhas seguidas): adiada para a próxima fase, "depois que a gente medir o impacto" ([09:37]–[09:38] Marcos/Larissa).
+6. **Mecanismo de assinatura durante o grace period de rotação**: ficou decidido que a secret antiga vale por 24h em paralelo ([09:21]–[09:22] Sofia), mas não *como* isso se reflete na assinatura outbound — quem verifica é o cliente, então a plataforma precisa enviar algo verificável com a secret antiga durante a janela. Proposta no [FDD §6.5](FDD.md#65-post-apiv1webhooksidrotate-secret--rotação-de-secret-rf-11) (duas assinaturas em `X-Signature`), a validar na revisão de segurança da Sofia ([09:46] Sofia).
 
 ## Impacto e riscos
 
@@ -59,7 +60,7 @@ O detalhamento de implementação (contratos, payloads, matriz de erros, fluxos,
 | --- | --- |
 | Outbox no MySQL, publicação atômica na transação do `changeStatus` | [ADR-001](adrs/ADR-001-outbox-no-mysql.md) |
 | Worker em processo separado, polling de 2s, single-worker | [ADR-002](adrs/ADR-002-worker-separado-em-polling.md) |
-| Retry 5x com backoff 1m/5m/30m/2h/12h, DLQ separada, replay ADMIN | [ADR-003](adrs/ADR-003-retry-backoff-e-dlq.md) |
+| Retry (5 retentativas) com backoff 1m/5m/30m/2h/12h, DLQ separada, replay ADMIN | [ADR-003](adrs/ADR-003-retry-backoff-e-dlq.md) |
 | HMAC-SHA256, secret por endpoint, rotação com grace period 24h | [ADR-004](adrs/ADR-004-hmac-sha256-secret-por-endpoint.md) |
 | At-least-once com dedup por `X-Event-Id` | [ADR-005](adrs/ADR-005-at-least-once-x-event-id.md) |
 | Reuso dos padrões existentes (módulo, AppError/`WEBHOOK_*`, Pino, requireRole, Zod) | [ADR-006](adrs/ADR-006-reuso-padroes-existentes.md) |
